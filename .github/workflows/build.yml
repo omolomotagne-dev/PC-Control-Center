@@ -14,7 +14,7 @@ build:
 runs-on: windows-latest
 timeout-minutes: 20
 
-```
+
 steps:
   - name: Download source
     uses: actions/checkout@v4
@@ -109,4 +109,4 @@ steps:
         PCControlCenter-Portable-x64.zip
       if-no-files-found: error
       retention-days: 14
-```
+
