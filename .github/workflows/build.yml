@@ -1,4 +1,4 @@
-name: PC Control Center - Build Windows EXE
+name: PC Control Center - Build Windows
 
 on:
 workflow_dispatch:
@@ -11,65 +11,126 @@ contents: read
 
 jobs:
 build:
+name: Compile and package Windows app
 runs-on: windows-latest
+timeout-minutes: 15
 
 ```
 steps:
-  - name: Recuperer le code source
+  - name: Checkout source code
     uses: actions/checkout@v4
 
-  - name: Configurer MSBuild
+  - name: Setup MSBuild
     uses: microsoft/setup-msbuild@v2
 
-  - name: Trouver le projet
+  - name: Locate project
+    id: locate
     shell: pwsh
     run: |
-      $solution = Get-ChildItem -Path . -Recurse -Filter *.sln |
-        Select-Object -First 1
+      $solutions = @(Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -File -Filter *.sln)
+      $projects = @(Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -File -Filter *.csproj)
 
-      if ($solution) {
-        "PROJECT_PATH=$($solution.FullName)" >> $env:GITHUB_ENV
-      } else {
-        $project = Get-ChildItem -Path . -Recurse -Filter *.csproj |
-          Select-Object -First 1
-
-        if (-not $project) {
-          throw "Aucun fichier .sln ou .csproj trouve. Ajoute le vrai projet C# au depot."
-        }
-
-        "PROJECT_PATH=$($project.FullName)" >> $env:GITHUB_ENV
+      if ($solutions.Count -gt 0) {
+        $selected = $solutions[0].FullName
+        "PROJECT_PATH=$selected" >> $env:GITHUB_ENV
+        "PROJECT_KIND=sln" >> $env:GITHUB_ENV
+        Write-Host "Solution found: $selected"
+      }
+      elseif ($projects.Count -gt 0) {
+        $selected = $projects[0].FullName
+        "PROJECT_PATH=$selected" >> $env:GITHUB_ENV
+        "PROJECT_KIND=csproj" >> $env:GITHUB_ENV
+        Write-Host "Project found: $selected"
+      }
+      else {
+        throw "No .sln or .csproj found. Add the actual C# project to this repository."
       }
 
-  - name: Compiler en Release
+  - name: Build Release
     shell: pwsh
     run: |
-      msbuild "$env:PROJECT_PATH" /restore /m /p:Configuration=Release
+      Write-Host "Building: $env:PROJECT_PATH"
+
+      msbuild "$env:PROJECT_PATH" `
+        /restore `
+        /m `
+        /verbosity:minimal `
+        /p:Configuration=Release `
+        /p:ContinuousIntegrationBuild=true
 
       if ($LASTEXITCODE -ne 0) {
-        throw "La compilation a echoue."
+        throw "Build failed. Read the MSBuild errors above."
       }
 
-  - name: Verifier et preparer les fichiers
+  - name: Find executable and prepare package
     shell: pwsh
     run: |
-      $exe = Get-ChildItem -Path . -Recurse -Filter PCControlCenter.exe |
-        Where-Object { $_.FullName -match '[\\/]bin[\\/]Release[\\/]' } |
-        Select-Object -First 1
+      $workspace = $env:GITHUB_WORKSPACE
 
-      if (-not $exe) {
-        throw "Compilation terminee, mais PCControlCenter.exe est introuvable. Verifie le nom et le type du projet."
+      $executables = @(
+        Get-ChildItem -Path $workspace -Recurse -File -Filter *.exe |
+        Where-Object {
+          $_.FullName -match '[\\/]bin[\\/]Release[\\/]' -and
+          $_.Name -notmatch '^(testhost|.*\.vshost)\.exe$' -and
+          $_.FullName -notmatch '[\\/]obj[\\/]'
+        }
+      )
+
+      if ($executables.Count -eq 0) {
+        throw "Build completed but no executable was found. Check the project OutputType and build logs."
       }
 
-      $output = Join-Path $PWD "dist"
-      New-Item -ItemType Directory -Path $output -Force | Out-Null
+      $preferred = @(
+        $executables | Where-Object {
+          $_.Name -in @(
+            'PCControlCenter.exe',
+            'PCControlCenter.App.exe'
+          )
+        }
+      )
 
-      $buildFolder = $exe.Directory.FullName
-      Copy-Item -Path (Join-Path $buildFolder "*") -Destination $output -Recurse -Force
+      if ($preferred.Count -gt 0) {
+        $exe = $preferred[0]
+      }
+      elseif ($executables.Count -eq 1) {
+        $exe = $executables[0]
+      }
+      else {
+        Write-Host "Executables found:"
+        $executables | ForEach-Object { Write-Host $_.FullName }
+        throw "Several executables were found and the main application could not be identified."
+      }
 
-      Compress-Archive -Path (Join-Path $output "*") `
-        -DestinationPath (Join-Path $PWD "PCControlCenter-Portable-x64.zip") -Force
+      Write-Host "Application executable: $($exe.FullName)"
 
-  - name: Publier EXE et ZIP
+      $outputDirectory = Join-Path $workspace 'dist'
+      New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+
+      $buildDirectory = $exe.Directory.FullName
+
+      Get-ChildItem -Path $buildDirectory -Force |
+        Copy-Item -Destination $outputDirectory -Recurse -Force
+
+      $packagedExe = Join-Path $outputDirectory $exe.Name
+
+      if (-not (Test-Path $packagedExe)) {
+        throw "The executable was not copied into the package."
+      }
+
+      $zipPath = Join-Path $workspace 'PCControlCenter-Portable-x64.zip'
+
+      Compress-Archive `
+        -Path (Join-Path $outputDirectory '*') `
+        -DestinationPath $zipPath `
+        -Force
+
+      Write-Host "Package contents:"
+      Get-ChildItem -Path $outputDirectory -Recurse |
+        Select-Object FullName, Length
+
+      Write-Host "ZIP created: $zipPath"
+
+  - name: Upload Windows application
     uses: actions/upload-artifact@v4
     with:
       name: PCControlCenter-Windows-x64
@@ -77,4 +138,5 @@ steps:
         dist/**
         PCControlCenter-Portable-x64.zip
       if-no-files-found: error
+      retention-days: 14
 ```
