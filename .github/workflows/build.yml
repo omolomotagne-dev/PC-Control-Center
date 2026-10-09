@@ -1,9 +1,13 @@
-name: Build PC Control Center
+name: PC Control Center - Build Windows EXE
 
 on:
 workflow_dispatch:
 push:
-branches: [main]
+branches:
+- main
+
+permissions:
+contents: read
 
 jobs:
 build:
@@ -11,58 +15,66 @@ runs-on: windows-latest
 
 ```
 steps:
-  - name: Recuperer le code
+  - name: Recuperer le code source
     uses: actions/checkout@v4
 
-  - name: Installer MSBuild
+  - name: Configurer MSBuild
     uses: microsoft/setup-msbuild@v2
 
-  - name: Verifier les fichiers du projet
+  - name: Trouver le projet
     shell: pwsh
     run: |
-      Write-Host "Recherche des projets C#..."
-      Get-ChildItem -Recurse -Include *.sln,*.csproj |
-        Select-Object -ExpandProperty FullName
+      $solution = Get-ChildItem -Path . -Recurse -Filter *.sln |
+        Select-Object -First 1
 
-  - name: Compiler le projet WPF
-    shell: pwsh
-    run: |
-      $projects = Get-ChildItem -Recurse -Filter *.sln
-      if (-not $projects) {
-        $projects = Get-ChildItem -Recurse -Filter *.csproj
-      }
-      if (-not $projects) {
-        throw "Aucun fichier .sln ou .csproj trouve dans le depot."
-      }
+      if ($solution) {
+        "PROJECT_PATH=$($solution.FullName)" >> $env:GITHUB_ENV
+      } else {
+        $project = Get-ChildItem -Path . -Recurse -Filter *.csproj |
+          Select-Object -First 1
 
-      foreach ($project in $projects) {
-        msbuild $project.FullName /restore /p:Configuration=Release /m
-        if ($LASTEXITCODE -ne 0) {
-          throw "La compilation a echoue : $($project.Name)"
+        if (-not $project) {
+          throw "Aucun fichier .sln ou .csproj trouve. Ajoute le vrai projet C# au depot."
         }
+
+        "PROJECT_PATH=$($project.FullName)" >> $env:GITHUB_ENV
       }
 
-  - name: Rechercher l executable
+  - name: Compiler en Release
     shell: pwsh
     run: |
-      $exe = Get-ChildItem -Recurse -Filter PCControlCenter.exe |
-        Where-Object { $_.FullName -match '\\bin\\Release\\' }
+      msbuild "$env:PROJECT_PATH" /restore /m /p:Configuration=Release
+
+      if ($LASTEXITCODE -ne 0) {
+        throw "La compilation a echoue."
+      }
+
+  - name: Verifier et preparer les fichiers
+    shell: pwsh
+    run: |
+      $exe = Get-ChildItem -Path . -Recurse -Filter PCControlCenter.exe |
+        Where-Object { $_.FullName -match '[\\/]bin[\\/]Release[\\/]' } |
+        Select-Object -First 1
 
       if (-not $exe) {
-        throw "Compilation terminee mais PCControlCenter.exe introuvable."
+        throw "Compilation terminee, mais PCControlCenter.exe est introuvable. Verifie le nom et le type du projet."
       }
 
-      New-Item -ItemType Directory -Force -Path dist | Out-Null
-      Copy-Item $exe[0].FullName dist/
-      Get-ChildItem dist
+      $output = Join-Path $PWD "dist"
+      New-Item -ItemType Directory -Path $output -Force | Out-Null
 
-  - name: Publier le vrai executable
+      $buildFolder = $exe.Directory.FullName
+      Copy-Item -Path (Join-Path $buildFolder "*") -Destination $output -Recurse -Force
+
+      Compress-Archive -Path (Join-Path $output "*") `
+        -DestinationPath (Join-Path $PWD "PCControlCenter-Portable-x64.zip") -Force
+
+  - name: Publier EXE et ZIP
     uses: actions/upload-artifact@v4
     with:
-      name: PCControlCenter-Windows
-      path: dist/
+      name: PCControlCenter-Windows-x64
+      path: |
+        dist/**
+        PCControlCenter-Portable-x64.zip
       if-no-files-found: error
 ```
-
-    bool IsAvailable,
-    string Message);
