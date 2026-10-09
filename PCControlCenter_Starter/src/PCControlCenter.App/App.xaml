@@ -1,0 +1,6 @@
+<Application x:Class="PCControlCenter.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Application.Resources>
+    <Color x:Key="Bg">#FF080C14</Color><Color x:Key="Panel">#FF101827</Color><Color x:Key="Accent">#FF00A8FF</Color><Color x:Key="Text">#FFEAF4FF</Color>
+    <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource Bg}"/><SolidColorBrush x:Key="PanelBrush" Color="{StaticResource Panel}"/><SolidColorBrush x:Key="AccentBrush" Color="{StaticResource Accent}"/><SolidColorBrush x:Key="TextBrush" Color="{StaticResource Text}"/>
+  </Application.Resources>
+</Application>
