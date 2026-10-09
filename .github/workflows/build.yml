@@ -1,0 +1,30 @@
+name: Creation du fichier EXE
+
+on:
+  workflow_dispatch: # Permet de lancer la fabrication d'un simple clic
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: Recuperer le code
+      uses: actions/checkout@v4
+
+    - name: Configurer les outils de construction
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Creer un faux projet pour le test
+      shell: powershell
+      run: |
+        echo 'echo "PC Control Center lance avec succes !"' > pc.cmd
+
+    - name: Generer le dossier ZIP
+      shell: powershell
+      run: |
+        Compress-Archive -Path .\pc.cmd -DestinationPath .\PCControlCenter-Portable-x64.zip
+
+    - name: Recuperer mon fichier
+      uses: actions/upload-artifact@v4
+      with:
+        name: Mon-Application-Windows
+        path: .\PCControlCenter-Portable-x64.zip
