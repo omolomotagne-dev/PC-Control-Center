@@ -1,30 +1,39 @@
-name: Creation du fichier EXE
 
-on:
-  workflow_dispatch: # Permet de lancer la fabrication d'un simple clic
+public interface IMonitoringModule
+{
+    string Id { get; }
+    string DisplayName { get; }
 
-jobs:
-  build:
-    runs-on: windows-latest
-    steps:
-    - name: Recuperer le code
-      uses: actions/checkout@v4
+    Task InitializeAsync(
+        CancellationToken cancellationToken);
 
-    - name: Configurer les outils de construction
-      uses: microsoft/setup-msbuild@v2
+    Task<ModuleStatus> GetStatusAsync(
+        CancellationToken cancellationToken);
 
-    - name: Creer un faux projet pour le test
-      shell: powershell
-      run: |
-        echo 'echo "PC Control Center lance avec succes !"' > pc.cmd
+    Task<IReadOnlyList<MetricSample>> CollectAsync(
+        CancellationToken cancellationToken);
 
-    - name: Generer le dossier ZIP
-      shell: powershell
-      run: |
-        Compress-Archive -Path .\pc.cmd -DestinationPath .\PCControlCenter-Portable-x64.zip
+    Task StopAsync(
+        CancellationToken cancellationToken);
+}
 
-    - name: Recuperer mon fichier
-      uses: actions/upload-artifact@v4
-      with:
-        name: Mon-Application-Windows
-        path: .\PCControlCenter-Portable-x64.zip
+public sealed record MetricSample(
+    string MetricId,
+    double? Value,
+    string Unit,
+    DateTimeOffset Timestamp,
+    string Source,
+    MetricQuality Quality);
+
+public enum MetricQuality
+{
+    Valid,
+    Estimated,
+    Unavailable,
+    Stale,
+    Error
+}
+
+public sealed record ModuleStatus(
+    bool IsAvailable,
+    string Message);
