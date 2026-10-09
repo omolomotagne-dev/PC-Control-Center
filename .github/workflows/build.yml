@@ -1,39 +1,68 @@
+name: Build PC Control Center
 
-public interface IMonitoringModule
-{
-    string Id { get; }
-    string DisplayName { get; }
+on:
+workflow_dispatch:
+push:
+branches: [main]
 
-    Task InitializeAsync(
-        CancellationToken cancellationToken);
+jobs:
+build:
+runs-on: windows-latest
 
-    Task<ModuleStatus> GetStatusAsync(
-        CancellationToken cancellationToken);
+```
+steps:
+  - name: Recuperer le code
+    uses: actions/checkout@v4
 
-    Task<IReadOnlyList<MetricSample>> CollectAsync(
-        CancellationToken cancellationToken);
+  - name: Installer MSBuild
+    uses: microsoft/setup-msbuild@v2
 
-    Task StopAsync(
-        CancellationToken cancellationToken);
-}
+  - name: Verifier les fichiers du projet
+    shell: pwsh
+    run: |
+      Write-Host "Recherche des projets C#..."
+      Get-ChildItem -Recurse -Include *.sln,*.csproj |
+        Select-Object -ExpandProperty FullName
 
-public sealed record MetricSample(
-    string MetricId,
-    double? Value,
-    string Unit,
-    DateTimeOffset Timestamp,
-    string Source,
-    MetricQuality Quality);
+  - name: Compiler le projet WPF
+    shell: pwsh
+    run: |
+      $projects = Get-ChildItem -Recurse -Filter *.sln
+      if (-not $projects) {
+        $projects = Get-ChildItem -Recurse -Filter *.csproj
+      }
+      if (-not $projects) {
+        throw "Aucun fichier .sln ou .csproj trouve dans le depot."
+      }
 
-public enum MetricQuality
-{
-    Valid,
-    Estimated,
-    Unavailable,
-    Stale,
-    Error
-}
+      foreach ($project in $projects) {
+        msbuild $project.FullName /restore /p:Configuration=Release /m
+        if ($LASTEXITCODE -ne 0) {
+          throw "La compilation a echoue : $($project.Name)"
+        }
+      }
 
-public sealed record ModuleStatus(
+  - name: Rechercher l executable
+    shell: pwsh
+    run: |
+      $exe = Get-ChildItem -Recurse -Filter PCControlCenter.exe |
+        Where-Object { $_.FullName -match '\\bin\\Release\\' }
+
+      if (-not $exe) {
+        throw "Compilation terminee mais PCControlCenter.exe introuvable."
+      }
+
+      New-Item -ItemType Directory -Force -Path dist | Out-Null
+      Copy-Item $exe[0].FullName dist/
+      Get-ChildItem dist
+
+  - name: Publier le vrai executable
+    uses: actions/upload-artifact@v4
+    with:
+      name: PCControlCenter-Windows
+      path: dist/
+      if-no-files-found: error
+```
+
     bool IsAvailable,
     string Message);
