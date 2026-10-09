@@ -1,6 +1,6 @@
 name: PC Control Center Build
 
-on:
+"on":
 workflow_dispatch:
 push:
 branches:
